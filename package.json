@@ -1,0 +1,37 @@
+{
+  "name": "ai-revenue-recovery",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agentic system that detects at-risk revenue, diagnoses the cause, executes policy-bounded recovery actions, verifies payment, and keeps an audit trail.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "postinstall": "prisma generate",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres redis",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force",
+    "db:studio": "prisma studio",
+    "dev:api": "npm run dev --workspace @revrec/api",
+    "dev:web": "npm run dev --workspace @revrec/web",
+    "build:shared": "npm run build --workspace @revrec/shared",
+    "build": "npm run build:shared && npm run build --workspace @revrec/api && npm run build --workspace @revrec/web"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "prisma": "^6.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,160 @@
+# AI Revenue Recovery
+
+Agentic system that detects at-risk revenue, diagnoses the cause, executes policy-bounded recovery actions, verifies whether money actually came back, and keeps an audit trail for every step.
+
+## What it covers
+
+- Payment degradation -> root cause -> retry, update-link, or payment-link recovery
+- Checkout abandonment recovery
+- Failed subscription recovery
+- Overdue invoice follow-up
+- Promise-to-pay tracking and due-date sweeps
+- Hinglish voice recovery routing
+- Batch recovery runs with measured recovered revenue
+
+## Stack
+
+| Layer | Technology |
+| --- | --- |
+| Frontend | Next.js 15 + TypeScript + Tailwind |
+| Backend | NestJS 11 + TypeScript |
+| Database | PostgreSQL 16 + Prisma |
+| Background jobs | Redis 7 + BullMQ |
+| AI | Mock Gemini provider by default, real Gemini when `GEMINI_API_KEY` is set |
+
+## Monorepo layout
+
+```text
+apps/
+  web/       Next.js dashboard
+  api/       NestJS backend
+packages/
+  shared/    Shared types + Zod schemas
+prisma/      Schema + seed data
+```
+
+## Getting started
+
+```bash
+npm install
+npm run db:up
+npm run db:deploy
+npm run db:seed
+npm run dev:api
+npm run dev:web
+```
+
+- API: `http://localhost:3002`
+- Dashboard: `http://localhost:3100`
+
+## Core workflow
+
+1. Revenue-loss events create business records plus `OPEN` recovery cases.
+2. The diagnosis layer classifies root cause and recommends one bounded action.
+3. The policy engine enforces retry caps, contact caps, contact windows, cooldowns, and dispute stops.
+4. The tools layer executes only permitted actions and logs them.
+5. Verification updates recovered money and closes linked invoices or subscriptions when payment succeeds.
+6. Promise-to-pay rows are tracked separately and swept when due.
+7. The batch agent runs the whole loop across a prioritized set of cases and returns measured recovery output.
+
+## Main API endpoints
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/health` | Service health |
+| GET | `/customers` | Customers with counts |
+| GET | `/customers/:id` | Customer detail and history |
+| GET | `/cases` | Recovery cases with filters |
+| GET | `/cases/stats/summary` | KPI summary |
+| GET | `/cases/stats/strategies` | Recovery performance by recommended strategy |
+| GET | `/cases/:id` | Case detail with events and AI decision |
+| GET | `/simulator/config` | Simulator capabilities |
+| POST | `/simulator/events/payment-failure` | Create a failed-payment case |
+| POST | `/simulator/events/checkout-abandonment` | Create a checkout-dropoff case |
+| POST | `/simulator/events/subscription-failure` | Create a failed-renewal case |
+| POST | `/simulator/events/invoice-overdue` | Create an overdue-invoice case |
+| POST | `/simulator/batch` | Bulk-generate cases |
+| GET | `/ai/provider` | Active diagnosis provider |
+| POST | `/ai/diagnose/:caseId` | Diagnose one case |
+| POST | `/ai/diagnose/pending` | Diagnose pending `OPEN` cases |
+| GET | `/policy/config` | Effective policy limits |
+| POST | `/policy/evaluate/:caseId` | Dry-run policy verdict |
+| POST | `/cases/:id/execute` | Execute the next action through the policy gate |
+| GET | `/verification/pending` | Cases waiting for payment outcome |
+| POST | `/verification/customer/:caseId` | Simulate one customer outcome |
+| POST | `/verification/batch` | Simulate outcomes across a batch |
+| GET | `/ptp` | Promise-to-pay tracker |
+| POST | `/ptp/sweep` | Sweep due promises |
+| POST | `/ptp/:id/settle` | Manually settle a promise |
+| POST | `/voice/simulate-call/:caseId` | Simulated Hinglish voice call |
+| POST | `/agent/recover-batch` | Run the bounded recovery agent over a batch |
+
+## Batch agent example
+
+```bash
+curl -X POST http://localhost:3002/agent/recover-batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "limit": 25,
+    "verifyWaitingCustomers": true,
+    "verificationSuccessRatePct": 60,
+    "runPromiseSweep": true
+  }'
+```
+
+## Production pilot (India)
+
+The repository is safe to deploy in simulated mode by default. For a real pilot,
+deploy the API with `railway.toml`, set service variables from `.env.example`,
+and set `WEB_ORIGIN` to the deployed dashboard URL.
+
+For Razorpay Test Mode, set `PAYMENT_PROVIDER=razorpay` plus the three
+`RAZORPAY_*` secrets in Railway. Payment links are mapped to recovery cases and
+only a signed `POST /webhooks/razorpay` event can mark money as recovered.
+Subscribe to `payment_link.paid`, `payment.failed`, and dispute events in the
+Razorpay dashboard. Do not configure live keys until consent, templates, and a
+human escalation owner have been approved.
+
+The free options are appropriate for a small pilot only: Railway has limited
+monthly free credit, Resend has a capped free transactional-email tier, and
+Razorpay Test Mode is free. Live Razorpay payments and SMS/WhatsApp delivery
+have usage charges.
+
+Optional demo helper:
+
+```json
+{
+  "simulateBatch": {
+    "failedPayments": 10,
+    "checkoutAbandonments": 5,
+    "subscriptionFailures": 4,
+    "invoiceOverdues": 3
+  }
+}
+```
+
+The batch response includes:
+
+- cases selected
+- cases diagnosed
+- policy allows vs denies
+- actions executed
+- recovered count and amount
+- deferred or escalated promise-to-pay outcomes
+- per-case outcomes
+- post-run KPI snapshot
+
+## Real-world safeguards now implemented
+
+- Terminal cases cannot receive new automated outreach or retries.
+- Policy denials caused by contact hours or cooldown defer work instead of forcing escalation.
+- Retry denials fall back to safer customer-action flows where possible.
+- Verified recovery updates linked invoices and subscriptions, not just the recovery case.
+- Promise-to-pay records now generate case events and audit logs.
+- Every batch run writes an audit log summary.
+
+## Notes
+
+- The dashboard includes a `Run Batch Agent` button that calls the new orchestration endpoint and refreshes KPI views.
+- The default AI provider is deterministic and offline-friendly for local development and testing.
+- The web production build may require elevated process permissions in some sandboxed Windows environments.

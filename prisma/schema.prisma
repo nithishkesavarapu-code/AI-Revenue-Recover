@@ -1,0 +1,328 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------- Enums ----------------
+
+enum CaseType {
+  FAILED_PAYMENT
+  CHECKOUT_ABANDONMENT
+  FAILED_SUBSCRIPTION
+  OVERDUE_INVOICE
+  MANDATE_FAILURE
+}
+
+enum CaseStatus {
+  OPEN
+  DIAGNOSED
+  ACTION_TAKEN
+  WAITING_CUSTOMER
+  RECOVERED
+  ESCALATED
+  CLOSED_LOST
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum FailureReason {
+  EXPIRED_CARD
+  INSUFFICIENT_FUNDS
+  DECLINED_BY_BANK
+  AUTHENTICATION_FAILED
+  TECHNICAL_ERROR
+  CUSTOMER_DROPOFF
+  UNKNOWN
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  RETRY_SCHEDULED
+}
+
+enum PaymentMethod {
+  CARD
+  UPI
+  NETBANKING
+  WALLET
+  BANK_TRANSFER
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  OVERDUE
+  PAID
+  DISPUTED
+}
+
+enum Recoverability {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum RecommendedAction {
+  RETRY_PAYMENT
+  SEND_PAYMENT_LINK
+  SEND_PAYMENT_UPDATE_LINK
+  SEND_EMAIL
+  SEND_SMS
+  SCHEDULE_RETRY
+  CREATE_ESCALATION
+  CLOSE_CASE
+  NO_ACTION
+}
+
+enum Channel {
+  EMAIL
+  SMS
+  WHATSAPP
+  VOICE
+}
+
+enum PtpStatus {
+  RECORDED
+  FOLLOWED_UP
+  FULFILLED
+  BROKEN
+}
+
+// ---------------- Models ----------------
+
+
+model Customer {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  phone     String?
+  company   String?
+  riskScore Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payments      Payment[]
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  recoveryCases RecoveryCase[]
+}
+
+model Payment {
+  id            Int            @id @default(autoincrement())
+  customerId    Int
+  customer      Customer       @relation(fields: [customerId], references: [id])
+  amount        Decimal        @db.Decimal(12, 2)
+  currency      String         @default("INR")
+  status        PaymentStatus  @default(PENDING)
+  failureReason FailureReason?
+  paymentMethod PaymentMethod  @default(CARD)
+  reference     String?        @unique
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  recoveryCases RecoveryCase[]
+
+  @@index([customerId])
+  @@index([status])
+}
+
+model Subscription {
+  id          Int                @id @default(autoincrement())
+  customerId  Int
+  customer    Customer           @relation(fields: [customerId], references: [id])
+  plan        String             @default("monthly")
+  amount      Decimal            @db.Decimal(12, 2)
+  currency    String             @default("INR")
+  renewalDate DateTime
+  status      SubscriptionStatus @default(ACTIVE)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  recoveryCases RecoveryCase[]
+
+  @@index([customerId])
+}
+
+model Invoice {
+  id         Int           @id @default(autoincrement())
+  customerId Int
+  customer   Customer      @relation(fields: [customerId], references: [id])
+  number     String        @unique
+  amount     Decimal       @db.Decimal(12, 2)
+  currency   String        @default("INR")
+  dueDate    DateTime
+  status     InvoiceStatus @default(SENT)
+  paidAt     DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  recoveryCases RecoveryCase[]
+
+  @@index([customerId])
+}
+
+model RecoveryCase {
+  id                Int                @id @default(autoincrement())
+  customerId        Int
+  customer          Customer           @relation(fields: [customerId], references: [id])
+  type              CaseType
+  amountAtRisk      Decimal            @db.Decimal(12, 2)
+  currency          String             @default("INR")
+  reason            String?
+  status            CaseStatus         @default(OPEN)
+  priority          Priority           @default(MEDIUM)
+  recommendedAction RecommendedAction?
+  recoveredAmount   Decimal?           @db.Decimal(12, 2)
+
+  sourcePaymentId      Int?
+  sourceSubscriptionId Int?
+  sourceInvoiceId      Int?
+
+  payment      Payment?      @relation(fields: [sourcePaymentId], references: [id])
+  subscription Subscription? @relation(fields: [sourceSubscriptionId], references: [id])
+  invoice      Invoice?      @relation(fields: [sourceInvoiceId], references: [id])
+
+  aiDecision      AiDecision?
+  events          CaseEvent[]
+  contactAttempts ContactAttempt[]
+  promise         PromiseToPay?
+  paymentLinks    PaymentLink[]
+
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  closedAt  DateTime?
+
+  @@index([status])
+  @@index([customerId])
+  @@index([type])
+}
+
+model AiDecision {
+  id                Int               @id @default(autoincrement())
+  caseId            Int               @unique
+  case              RecoveryCase      @relation(fields: [caseId], references: [id])
+  classification    String
+  rootCause         String?
+  recoverability    Recoverability    @default(MEDIUM)
+  recommendedAction RecommendedAction
+  confidence        Float
+  reason            String
+  provider          String            @default("mock-gemini")
+  model             String?
+  rawOutput         Json?
+  createdAt         DateTime          @default(now())
+}
+
+model CaseEvent {
+  id        Int          @id @default(autoincrement())
+  caseId    Int
+  case      RecoveryCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type      String // DETECTED | DIAGNOSED | POLICY_DECISION | ACTION_EXECUTED | PAYMENT_VERIFIED | ESCALATED | CLOSED
+  message   String
+  metadata  Json?
+  createdAt DateTime     @default(now())
+
+  @@index([caseId])
+}
+
+model ContactAttempt {
+  id      Int           @id @default(autoincrement())
+  caseId  Int
+  case    RecoveryCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  channel Channel       @default(EMAIL)
+  status  ContactStatus @default(SENT)
+  content String?
+  sentAt  DateTime      @default(now())
+
+  @@index([caseId])
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actor      String   @default("system") // system | ai-agent | policy-engine | human:<name>
+  action     String
+  entityType String
+  entityId   String?
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
+
+// Customer's spoken/written commitment to pay by a date (guide §4.7).
+model PromiseToPay {
+  id         Int       @id @default(autoincrement())
+  caseId     Int       @unique
+  case       RecoveryCase @relation(fields: [caseId], references: [id])
+  amount     Decimal   @db.Decimal(12, 2)
+  currency   String    @default("INR")
+  promisedOn DateTime
+  status     PtpStatus @default(RECORDED)
+  source     Channel   @default(VOICE)
+  transcript String?
+  followUps  Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+// Maps a provider-owned payment link back to the recovery case. Never infer a
+// recovery from a browser redirect; only a signed provider webhook can settle it.
+model PaymentLink {
+  id             Int          @id @default(autoincrement())
+  caseId         Int
+  case           RecoveryCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  provider       String
+  providerLinkId String       @unique
+  referenceId    String       @unique
+  shortUrl       String
+  status         String       @default("created")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([caseId, provider])
+}
+
+// Durable idempotency ledger for signed payment-provider webhooks.
+model ProviderWebhookEvent {
+  id          Int       @id @default(autoincrement())
+  provider    String
+  eventId     String
+  eventType   String
+  payload     Json
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  failure     String?
+
+  @@unique([provider, eventId])
+  @@index([provider, eventType])
+}
+
+
+
+enum ContactStatus {
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  REPLIED
+  FAILED
+}
