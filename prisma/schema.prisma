@@ -319,6 +319,7 @@ model ProviderWebhookEvent {
 
 
 enum ContactStatus {
+  NOT_SENT
   SENT
   DELIVERED
   OPENED

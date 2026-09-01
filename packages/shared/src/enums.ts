@@ -54,7 +54,7 @@ export type Recoverability = (typeof RECOVERABILITY_LEVELS)[number];
 export const CHANNELS = ["EMAIL", "SMS", "WHATSAPP", "VOICE"] as const;
 export type Channel = (typeof CHANNELS)[number];
 
-export const CONTACT_STATUSES = ["SENT", "DELIVERED", "OPENED", "CLICKED", "REPLIED", "FAILED"] as const;
+export const CONTACT_STATUSES = ["NOT_SENT", "SENT", "DELIVERED", "OPENED", "CLICKED", "REPLIED", "FAILED"] as const;
 export type ContactStatus = (typeof CONTACT_STATUSES)[number];
 
 export const PAYMENT_STATUSES = ["PENDING", "SUCCESS", "FAILED", "RETRY_SCHEDULED"] as const;

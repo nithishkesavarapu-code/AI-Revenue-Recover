@@ -120,6 +120,27 @@ monthly free credit, Resend has a capped free transactional-email tier, and
 Razorpay Test Mode is free. Live Razorpay payments and SMS/WhatsApp delivery
 have usage charges.
 
+### Railway dashboard service
+
+Create a second Railway service from the same GitHub repository for
+`@revrec/web`. In its service settings, use these commands:
+
+```text
+Build Command: npm run build:shared && npm run build --workspace @revrec/web
+Start Command: npm run start --workspace @revrec/web
+```
+
+Set these dashboard service variables:
+
+```text
+API_URL=https://YOUR-API-DOMAIN.up.railway.app
+API_AUTH_TOKEN=the same private token configured on the API service
+```
+
+Then set `WEB_ORIGIN=https://YOUR-DASHBOARD-DOMAIN.up.railway.app` on the API
+service and redeploy it. The dashboard calls the API server-side, so the token
+is never exposed to the browser.
+
 Optional demo helper:
 
 ```json

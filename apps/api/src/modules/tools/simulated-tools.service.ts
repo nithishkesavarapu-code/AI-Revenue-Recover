@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { CaseStatus, PaymentStatus, type Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RazorpayService } from "../payments/razorpay.service";
@@ -30,6 +31,7 @@ export class ToolsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly razorpay: RazorpayService,
+    private readonly config: ConfigService,
   ) {}
 
   async sendPaymentLink(caseId: number, updateMethod: boolean): Promise<ToolResult> {
@@ -47,17 +49,18 @@ export class ToolsService {
       : null;
     const link = liveLink?.short_url ?? `https://pay.revrec.sim/l/${caseId}-${Date.now().toString(36)}`;
     const kind = updateMethod ? "Payment-method update link" : "Secure payment link";
+    const deliveryEnabled = liveLink && this.config.get("RECOVERY_SEND_LIVE_MESSAGES") === "true";
     const attempt = await this.prisma.contactAttempt.create({
       data: {
         caseId,
         channel: "EMAIL",
-        status: "SENT",
+        status: deliveryEnabled ? "SENT" : "NOT_SENT",
         content: `${kind}: ${link} (amount at risk Rs ${Number(rc.amountAtRisk).toLocaleString("en-IN")})`,
       },
     });
     return this.finish(caseId, {
       tool: updateMethod ? "send_payment_update_link" : "send_payment_link",
-      detail: `${kind} ${liveLink ? "created with Razorpay" : "sent in simulation"} for ${rc.customer.email}: ${link}`,
+      detail: `${kind} ${liveLink ? "created with Razorpay" : "created in simulation"}${deliveryEnabled ? ` and sent to ${rc.customer.email}` : "; customer delivery is disabled"}: ${link}`,
       caseStatus: CaseStatus.WAITING_CUSTOMER,
       contactAttemptId: attempt.id,
     });
@@ -70,11 +73,11 @@ export class ToolsService {
         ? `Gentle reminder from ${rc.customer.company ?? "our billing team"}: your pending payment of Rs ${Number(rc.amountAtRisk).toLocaleString("en-IN")} can be completed in one click.`
         : `Reminder: Rs ${Number(rc.amountAtRisk).toLocaleString("en-IN")} pending. Tap to pay: https://pay.revrec.sim/s/${caseId}`;
     const attempt = await this.prisma.contactAttempt.create({
-      data: { caseId, channel, status: "SENT", content: template },
+      data: { caseId, channel, status: "NOT_SENT", content: template },
     });
     return this.finish(caseId, {
       tool: channel === "EMAIL" ? "send_email" : "send_sms",
-      detail: `${channel === "EMAIL" ? "Recovery email" : "Recovery SMS"} sent for case #${caseId}`,
+      detail: `${channel === "EMAIL" ? "Recovery email" : "Recovery SMS"} recorded but not delivered because no messaging provider is configured for case #${caseId}`,
       caseStatus: CaseStatus.WAITING_CUSTOMER,
       contactAttemptId: attempt.id,
     });
