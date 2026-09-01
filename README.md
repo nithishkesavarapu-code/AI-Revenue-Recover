@@ -105,8 +105,25 @@ curl -X POST http://localhost:3002/agent/recover-batch \
 ## Production pilot (India)
 
 The repository is safe to deploy in simulated mode by default. For a real pilot,
-deploy the API with `railway.toml`, set service variables from `.env.example`,
+create separate API and dashboard services from the same repository. Leave the
+Railway **Root Directory** blank for both services because they share the root
+workspace and `@revrec/shared` package. Set service variables from `.env.example`
 and set `WEB_ORIGIN` to the deployed dashboard URL.
+
+### Railway API service
+
+Set these values in the API service's **Settings** tab:
+
+```text
+Build Command: npm run build:shared && npm run build --workspace @revrec/api
+Pre-Deploy Command: npm run db:deploy
+Start Command: npm run start --workspace @revrec/api
+Healthcheck Path: /health
+```
+
+The repository-level `railway.toml` deliberately specifies only the Railpack
+builder. Service-specific commands must remain in Railway because this shared
+repository deploys two different applications.
 
 For Razorpay Test Mode, set `PAYMENT_PROVIDER=razorpay` plus the three
 `RAZORPAY_*` secrets in Railway. Payment links are mapped to recovery cases and

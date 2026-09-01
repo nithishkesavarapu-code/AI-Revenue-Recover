@@ -1,10 +1,2 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "npm run build:shared && npm run build --workspace @revrec/api"
-
-[deploy]
-startCommand = "npm run start --workspace @revrec/api"
-healthcheckPath = "/health"
-healthcheckTimeout = 100
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
