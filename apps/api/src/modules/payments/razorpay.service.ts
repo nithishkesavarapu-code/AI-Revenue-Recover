@@ -42,8 +42,8 @@ export class RazorpayService {
         // Email is sufficient for this app's link flow. Do not pass formatted
         // seed phone numbers to Razorpay when SMS delivery is disabled.
         customer: { name: input.customerName, email: input.email },
-        // Delivery remains opt-in until the business has configured consent and templates.
-        notify: { email: this.config.get("RECOVERY_SEND_LIVE_MESSAGES") === "true", sms: false },
+        // Delivery is handled by the audited email provider, never by Razorpay.
+        notify: { email: false, sms: false },
         notes: { recovery_case_id: String(input.caseId) },
       }),
     });

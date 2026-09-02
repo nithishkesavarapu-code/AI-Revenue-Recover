@@ -1,0 +1,1 @@
+ALTER TABLE "PromiseToPay" ADD COLUMN "remindedAt" TIMESTAMP(3);

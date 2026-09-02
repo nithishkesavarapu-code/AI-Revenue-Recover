@@ -99,11 +99,22 @@ enum Channel {
   VOICE
 }
 
+enum ConsentStatus {
+  OPTED_IN
+  OPTED_OUT
+}
+
 enum PtpStatus {
   RECORDED
   FOLLOWED_UP
   FULFILLED
   BROKEN
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 // ---------------- Models ----------------
@@ -123,6 +134,7 @@ model Customer {
   subscriptions Subscription[]
   invoices      Invoice[]
   recoveryCases RecoveryCase[]
+  contactPreferences ContactPreference[]
 }
 
 model Payment {
@@ -205,6 +217,8 @@ model RecoveryCase {
   contactAttempts ContactAttempt[]
   promise         PromiseToPay?
   paymentLinks    PaymentLink[]
+  revenueEvents   RevenueEvent[]
+  approvals       ApprovalRequest[]
 
 
   createdAt DateTime  @default(now())
@@ -245,15 +259,29 @@ model CaseEvent {
 }
 
 model ContactAttempt {
-  id      Int           @id @default(autoincrement())
-  caseId  Int
-  case    RecoveryCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  channel Channel       @default(EMAIL)
-  status  ContactStatus @default(SENT)
-  content String?
-  sentAt  DateTime      @default(now())
+  id                Int           @id @default(autoincrement())
+  caseId            Int
+  case              RecoveryCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  channel           Channel       @default(EMAIL)
+  status            ContactStatus @default(SENT)
+  content           String?
+  provider          String?
+  providerMessageId String?       @unique
+  sentAt            DateTime      @default(now())
 
   @@index([caseId])
+}
+
+model ContactPreference {
+  id        Int           @id @default(autoincrement())
+  customerId Int
+  customer  Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  channel   Channel
+  status    ConsentStatus @default(OPTED_OUT)
+  source    String?
+  updatedAt DateTime      @updatedAt
+
+  @@unique([customerId, channel])
 }
 
 model AuditLog {
@@ -268,6 +296,24 @@ model AuditLog {
   @@index([entityType, entityId])
 }
 
+model ApprovalRequest {
+  id              Int              @id @default(autoincrement())
+  caseId          Int
+  case            RecoveryCase     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  requestedAction RecommendedAction
+  status          ApprovalStatus   @default(PENDING)
+  requestedBy     String           @default("recovery-agent")
+  reason          String
+  reviewedAction  RecommendedAction?
+  reviewedBy      String?
+  reviewerNote    String?
+  reviewedAt      DateTime?
+  createdAt       DateTime         @default(now())
+
+  @@index([status, createdAt])
+  @@index([caseId])
+}
+
 // Customer's spoken/written commitment to pay by a date (guide §4.7).
 model PromiseToPay {
   id         Int       @id @default(autoincrement())
@@ -279,6 +325,7 @@ model PromiseToPay {
   status     PtpStatus @default(RECORDED)
   source     Channel   @default(VOICE)
   transcript String?
+  remindedAt DateTime?
   followUps  Int       @default(0)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -316,6 +363,24 @@ model ProviderWebhookEvent {
   @@index([provider, eventType])
 }
 
+// Provider-neutral idempotency ledger for inbound at-risk revenue events.
+model RevenueEvent {
+  id          Int          @id @default(autoincrement())
+  provider    String
+  eventId     String
+  eventType   String
+  payload     Json
+  occurredAt  DateTime
+  receivedAt  DateTime     @default(now())
+  processedAt DateTime?
+  caseId      Int?
+  case        RecoveryCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, eventId])
+  @@index([eventType, receivedAt])
+  @@index([caseId])
+}
+
 
 
 enum ContactStatus {
@@ -325,5 +390,6 @@ enum ContactStatus {
   OPENED
   CLICKED
   REPLIED
+  BOUNCED
   FAILED
 }

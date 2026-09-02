@@ -129,6 +129,7 @@ export class PromisesService {
    * still unpaid after one follow-up -> human escalation.
    */
   async sweep(): Promise<PtpSweepResult> {
+    await this.sendPreDueReminders();
     const due = await this.prisma.promiseToPay.findMany({
       where: {
         promisedOn: { lte: new Date() },
@@ -219,6 +220,30 @@ export class PromisesService {
     }
 
     return result;
+  }
+
+  /** Sends one policy-gated reminder before a recorded promise becomes due. */
+  private async sendPreDueReminders() {
+    const leadHours = Math.max(1, Number(process.env.PTP_REMINDER_LEAD_HOURS ?? 24));
+    const now = new Date();
+    const until = new Date(now.getTime() + leadHours * 3_600_000);
+    const upcoming = await this.prisma.promiseToPay.findMany({
+      where: {
+        promisedOn: { gt: now, lte: until },
+        remindedAt: null,
+        status: { in: [...OPEN_PROMISE_STATUSES] },
+      },
+      include: { case: { select: { id: true, status: true } } },
+      take: 50,
+    });
+    for (const promise of upcoming) {
+      if (!(ACTIVE_PROMISE_CASE_STATUSES as readonly string[]).includes(promise.case.status)) continue;
+      const execution = await this.caseActions.execute(promise.caseId, { action: "SEND_EMAIL" });
+      if (execution.executedAction === "SEND_EMAIL") {
+        await this.prisma.promiseToPay.update({ where: { id: promise.id }, data: { remindedAt: new Date() } });
+        await this.logPromiseStatus(promise.id, promise.caseId, "PROMISE_PRE_DUE_REMINDER", "Reminder sent before the promised payment date", { promisedOn: promise.promisedOn.toISOString() });
+      }
+    }
   }
 
   /** Manual settlement of a tracked promise. */

@@ -67,13 +67,14 @@ async function getData() {
       apiGet<StrategyRow[]>("/cases/stats/strategies"),
     ]);
     return { stats, cases, strategies, error: null as string | null };
-  } catch {
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Unknown API error";
+    console.error("Failed to load dashboard data:", error);
     return {
       stats: null,
       cases: null,
       strategies: null,
-      error:
-        "Cannot reach the API. Start it with `npm run dev:api` and make sure Postgres is up with `npm run db:up`.",
+      error: `Dashboard data is unavailable: ${detail}`,
     };
   }
 }

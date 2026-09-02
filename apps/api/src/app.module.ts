@@ -16,6 +16,11 @@ import { PaymentsModule } from "./modules/payments/payments.module";
 import { SecurityModule } from "./modules/security/security.module";
 import { ApiKeyGuard } from "./modules/security/api-key.guard";
 import { JobsModule } from "./modules/jobs/jobs.module";
+import { EventsModule } from "./modules/events/events.module";
+import { SequencesModule } from "./modules/sequences/sequences.module";
+import { EmailModule } from "./modules/email/email.module";
+import { ApprovalsModule } from "./modules/approvals/approvals.module";
+import { AnalyticsModule } from "./modules/analytics/analytics.module";
 
 @Module({
   imports: [
@@ -34,6 +39,11 @@ import { JobsModule } from "./modules/jobs/jobs.module";
     PaymentsModule,
     SecurityModule,
     JobsModule,
+    EventsModule,
+    SequencesModule,
+    EmailModule,
+    ApprovalsModule,
+    AnalyticsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ApiKeyGuard }],
 })

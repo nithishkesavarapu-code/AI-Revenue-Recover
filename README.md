@@ -64,6 +64,7 @@ npm run dev:web
 | GET | `/health` | Service health |
 | GET | `/customers` | Customers with counts |
 | GET | `/customers/:id` | Customer detail and history |
+| POST | `/customers/:id/preferences` | Record an email, SMS, WhatsApp, or voice opt-in/out |
 | GET | `/cases` | Recovery cases with filters |
 | GET | `/cases/stats/summary` | KPI summary |
 | GET | `/cases/stats/strategies` | Recovery performance by recommended strategy |
@@ -88,6 +89,74 @@ npm run dev:web
 | POST | `/ptp/:id/settle` | Manually settle a promise |
 | POST | `/voice/simulate-call/:caseId` | Simulated Hinglish voice call |
 | POST | `/agent/recover-batch` | Run the bounded recovery agent over a batch |
+| POST | `/events/revenue` | Ingest a deduplicated at-risk revenue event |
+
+## Live revenue-event intake
+
+Send trusted backend events to `POST /events/revenue` with the API key. The
+`provider` and `eventId` pair is idempotent: retries return the original case
+instead of creating duplicate recovery work.
+
+```json
+{
+  "provider": "billing-platform",
+  "eventId": "evt_01JQ9PAYMENTFAILED",
+  "type": "PAYMENT_FAILED",
+  "sourceReference": "payment_12345",
+  "amount": 499,
+  "currency": "INR",
+  "failureReason": "EXPIRED_CARD",
+  "customer": {
+    "name": "Demo Customer",
+    "email": "demo.customer@example.com"
+  }
+}
+```
+
+## Recovery sequences
+
+`POST /sequences/sweep` progresses active cases through the compliant default
+sequence: payment link, 24-hour reminder, 72-hour final reminder, and a
+120-hour human escalation. `POST /sequences/run/:caseId` processes one case.
+The policy engine still enforces the Indian contact window, cooldown, contact
+attempt cap, disputes, and retry limits at every step.
+
+Set `RECOVERY_SEQUENCE_STEPS_JSON` only when a different bounded sequence is
+required. It must be a JSON array of up to eight `{label, action, waitHours}`
+steps and end with `CREATE_ESCALATION`.
+
+## Resend email delivery
+
+Set `EMAIL_PROVIDER=resend`, `RECOVERY_SEND_LIVE_MESSAGES=true`, `RESEND_API_KEY`,
+and a verified `EMAIL_FROM` address to enable approved recovery emails. Register
+`POST /webhooks/resend` in Resend with `email.delivered`, `email.opened`,
+`email.clicked`, `email.bounced`, `email.failed`, and `email.received`, then set
+its signing secret as `RESEND_WEBHOOK_SECRET`. Delivery events are verified,
+deduplicated, and written to the linked contact attempt and case timeline.
+Set `RESEND_REPLY_TO_DOMAIN` to an inbound-enabled Resend domain to route replies
+to `replies+<contact-attempt-id>@your-domain` and track them as `REPLIED`.
+
+## Human approval queue
+
+High-value cases (Rs 50,000+) and high-risk customers (risk score 0.7+) can be
+submitted through `POST /approvals/request/:caseId`. Operators use
+`POST /approvals/:id/approve` or `/reject` with their identity and optional
+edited action. Approval still runs the policy engine before an action executes.
+
+## Customer consent
+
+Before live outreach, record the customer's channel preference. The policy
+engine blocks contact actions without an `OPTED_IN` preference and outside the
+configured India contact window.
+
+```json
+POST /customers/123/preferences
+{
+  "channel": "EMAIL",
+  "status": "OPTED_IN",
+  "source": "checkout-consent-v1"
+}
+```
 
 ## Batch agent example
 

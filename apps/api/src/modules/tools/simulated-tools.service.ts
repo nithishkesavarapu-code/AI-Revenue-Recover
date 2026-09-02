@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { CaseStatus, PaymentStatus, type Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RazorpayService } from "../payments/razorpay.service";
+import { ResendEmailService } from "../email/resend-email.service";
 
 export interface ToolResult {
   tool: string;
@@ -31,7 +31,7 @@ export class ToolsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly razorpay: RazorpayService,
-    private readonly config: ConfigService,
+    private readonly resend: ResendEmailService,
   ) {}
 
   async sendPaymentLink(caseId: number, updateMethod: boolean): Promise<ToolResult> {
@@ -49,18 +49,28 @@ export class ToolsService {
       : null;
     const link = liveLink?.short_url ?? `https://pay.revrec.sim/l/${caseId}-${Date.now().toString(36)}`;
     const kind = updateMethod ? "Payment-method update link" : "Secure payment link";
-    const deliveryEnabled = liveLink && this.config.get("RECOVERY_SEND_LIVE_MESSAGES") === "true";
     const attempt = await this.prisma.contactAttempt.create({
       data: {
         caseId,
         channel: "EMAIL",
-        status: deliveryEnabled ? "SENT" : "NOT_SENT",
+        status: "NOT_SENT",
         content: `${kind}: ${link} (amount at risk Rs ${Number(rc.amountAtRisk).toLocaleString("en-IN")})`,
       },
     });
+    const delivery = liveLink
+      ? await this.sendEmail(attempt.id, {
+          customerName: rc.customer.name,
+          customerEmail: rc.customer.email,
+          company: rc.customer.company,
+          amount: Number(rc.amountAtRisk),
+          currency: rc.currency,
+          paymentLink: link,
+          kind: "PAYMENT_LINK",
+        })
+      : null;
     return this.finish(caseId, {
       tool: updateMethod ? "send_payment_update_link" : "send_payment_link",
-      detail: `${kind} ${liveLink ? "created with Razorpay" : "created in simulation"}${deliveryEnabled ? ` and sent to ${rc.customer.email}` : "; customer delivery is disabled"}: ${link}`,
+      detail: `${kind} ${liveLink ? "created with Razorpay" : "created in simulation"}${delivery ? ` and emailed to ${rc.customer.email}` : "; customer delivery is disabled"}: ${link}`,
       caseStatus: CaseStatus.WAITING_CUSTOMER,
       contactAttemptId: attempt.id,
     });
@@ -75,9 +85,25 @@ export class ToolsService {
     const attempt = await this.prisma.contactAttempt.create({
       data: { caseId, channel, status: "NOT_SENT", content: template },
     });
+    const paymentLink = channel === "EMAIL"
+      ? await this.prisma.paymentLink.findFirst({ where: { caseId }, orderBy: { createdAt: "desc" } })
+      : null;
+    const delivery = channel === "EMAIL"
+      ? await this.sendEmail(attempt.id, {
+          customerName: rc.customer.name,
+          customerEmail: rc.customer.email,
+          company: rc.customer.company,
+          amount: Number(rc.amountAtRisk),
+          currency: rc.currency,
+          paymentLink: paymentLink?.shortUrl,
+          kind: "REMINDER",
+        })
+      : null;
     return this.finish(caseId, {
       tool: channel === "EMAIL" ? "send_email" : "send_sms",
-      detail: `${channel === "EMAIL" ? "Recovery email" : "Recovery SMS"} recorded but not delivered because no messaging provider is configured for case #${caseId}`,
+      detail: delivery
+        ? `Recovery email delivered to Resend for case #${caseId}`
+        : `${channel === "EMAIL" ? "Recovery email" : "Recovery SMS"} recorded but not delivered because no messaging provider is configured for case #${caseId}`,
       caseStatus: CaseStatus.WAITING_CUSTOMER,
       contactAttemptId: attempt.id,
     });
@@ -137,6 +163,24 @@ export class ToolsService {
       );
     }
     return rc;
+  }
+
+  private async sendEmail(
+    contactAttemptId: number,
+    input: Omit<Parameters<ResendEmailService["sendRecoveryEmail"]>[0], "contactAttemptId">,
+  ) {
+    if (!this.resend.isLiveDeliveryEnabled()) return null;
+    try {
+      const delivery = await this.resend.sendRecoveryEmail({ contactAttemptId, ...input });
+      await this.prisma.contactAttempt.update({
+        where: { id: contactAttemptId },
+        data: { status: "SENT", provider: delivery.provider, providerMessageId: delivery.providerMessageId },
+      });
+      return delivery;
+    } catch (error) {
+      await this.prisma.contactAttempt.update({ where: { id: contactAttemptId }, data: { status: "FAILED", provider: "resend" } });
+      throw error;
+    }
   }
 
   /**

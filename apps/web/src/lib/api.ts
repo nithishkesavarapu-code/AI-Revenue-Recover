@@ -1,3 +1,26 @@
+import "server-only";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+
+// Next dev runs API calls in worker processes. Load the repository-level .env
+// in each worker; hosted platforms retain their injected environment variables.
+function loadLocalApiEnvironment() {
+  if (process.env.API_URL && process.env.API_AUTH_TOKEN) return;
+
+  const envPath = path.resolve(process.cwd(), "../..", ".env");
+  if (!existsSync(envPath)) return;
+
+  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const match = line.match(/^(API_URL|API_AUTH_TOKEN)=(.*)$/);
+    if (!match || process.env[match[1]]) continue;
+
+    const value = match[2].trim().replace(/^(["'])(.*)\1$/, "$2");
+    if (value) process.env[match[1]] = value;
+  }
+}
+
+loadLocalApiEnvironment();
+
 export const API_URL = process.env.API_URL ?? "http://localhost:3002";
 const API_AUTH_TOKEN = process.env.API_AUTH_TOKEN;
 

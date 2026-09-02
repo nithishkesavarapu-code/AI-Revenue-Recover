@@ -22,6 +22,7 @@ interface EvaluationContext {
   hoursSinceLastContact: number | null;
   disputed: boolean;
   failureReason: string | null;
+  consented: boolean;
 }
 
 @Injectable()
@@ -83,6 +84,7 @@ export class PolicyEngineService {
         invoice: true,
         payment: true,
         contactAttempts: { orderBy: { sentAt: "desc" } },
+        customer: { include: { contactPreferences: true } },
         events: { where: { type: "ACTION_EXECUTED" } },
       },
     });
@@ -113,6 +115,7 @@ export class PolicyEngineService {
         : null,
       disputed: rc.invoice?.status === "DISPUTED",
       failureReason: payment?.failureReason ?? null,
+      consented: this.hasConsent(rc.customer.contactPreferences, action),
     });
   }
 
@@ -160,6 +163,7 @@ export class PolicyEngineService {
     }
 
     if (isContact) {
+      rules.push({ rule: "CUSTOMER_CONSENT", passed: ctx.consented, detail: ctx.consented ? "Customer opted in for this channel" : "Customer has not opted in for this channel" });
       rules.push({
         rule: "MAX_CONTACT_ATTEMPTS",
         passed: ctx.contactCount < cfg.maxContactAttemptsPerCase,
@@ -205,6 +209,11 @@ export class PolicyEngineService {
         : `${failedRule?.rule ?? "POLICY"}: ${failedRule?.detail ?? "denied"}`,
       evaluatedAt: new Date().toISOString(),
     };
+  }
+
+  private hasConsent(preferences: Array<{ channel: string; status: string }>, action: RecommendedAction) {
+    const channel = action === "SEND_SMS" ? "SMS" : "EMAIL";
+    return preferences.some((preference) => preference.channel === channel && preference.status === "OPTED_IN");
   }
 
   private fallbackFor(ctx: EvaluationContext, failedRule: string | null): RecommendedAction {
