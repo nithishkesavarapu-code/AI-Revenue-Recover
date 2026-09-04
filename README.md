@@ -221,7 +221,12 @@ Set these dashboard service variables:
 ```text
 API_URL=https://YOUR-API-DOMAIN.up.railway.app
 API_AUTH_TOKEN=the same private token configured on the API service
+DEMO_MODE=false
 ```
+
+Set `DEMO_MODE=true` only for a private hackathon demonstration. It exposes the
+dashboard Test Lab, which can create synthetic cases and run simulated AI,
+voice, and payment-verification workflows. Keep it `false` for production.
 
 Then set `WEB_ORIGIN=https://YOUR-DASHBOARD-DOMAIN.up.railway.app` on the API
 service and redeploy it. The dashboard calls the API server-side, so the token

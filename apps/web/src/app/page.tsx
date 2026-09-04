@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ApiCaseListItem, StatsSummary } from "@revrec/shared";
 import { runRecoveryAgent } from "@/app/agent-actions";
 import { apiGet, formatDateTime, formatInr } from "@/lib/api";
+import { TestLab } from "@/app/test-lab";
 
 export const dynamic = "force-dynamic";
 
@@ -128,6 +129,8 @@ export default async function DashboardPage() {
           {error}
         </div>
       ) : null}
+
+      {process.env.DEMO_MODE === "true" ? <TestLab /> : null}
 
       {stats ? (
         <>

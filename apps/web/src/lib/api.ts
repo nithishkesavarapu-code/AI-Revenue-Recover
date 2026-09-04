@@ -5,13 +5,13 @@ import path from "node:path";
 // Next dev runs API calls in worker processes. Load the repository-level .env
 // in each worker; hosted platforms retain their injected environment variables.
 function loadLocalApiEnvironment() {
-  if (process.env.API_URL && process.env.API_AUTH_TOKEN) return;
+  if (process.env.API_URL && process.env.API_AUTH_TOKEN && process.env.DEMO_MODE) return;
 
   const envPath = path.resolve(process.cwd(), "../..", ".env");
   if (!existsSync(envPath)) return;
 
   for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
-    const match = line.match(/^(API_URL|API_AUTH_TOKEN)=(.*)$/);
+    const match = line.match(/^(API_URL|API_AUTH_TOKEN|DEMO_MODE)=(.*)$/);
     if (!match || process.env[match[1]]) continue;
 
     const value = match[2].trim().replace(/^(["'])(.*)\1$/, "$2");
