@@ -1,101 +1,279 @@
 # AI Revenue Recovery
 
-Agentic system that detects at-risk revenue, diagnoses the cause, executes policy-bounded recovery actions, verifies whether money actually came back, and keeps an audit trail for every step.
+AI Revenue Recovery detects money at risk, uses AI to recommend a bounded next
+action, applies compliance policy, executes approved recovery work, and records
+verified outcomes in an audit trail.
 
-## What it covers
+It is designed for an India-focused demo and pilot: failed payments, abandoned
+checkouts, subscription failures, overdue invoices, payment links, email
+recovery, promise-to-pay tracking, human approval, and recovery analytics.
 
-- Payment degradation -> root cause -> retry, update-link, or payment-link recovery
-- Checkout abandonment recovery
-- Failed subscription recovery
-- Overdue invoice follow-up
-- Promise-to-pay tracking and due-date sweeps
-- Hinglish voice recovery routing
-- Batch recovery runs with measured recovered revenue
+## What Happens In A Recovery
+
+1. A billing platform, simulator, or dashboard Test Lab creates an `OPEN` recovery case.
+2. Gemini analyzes the case and recommends one allowed action.
+3. The policy engine checks customer consent, contact hours in India, cooldowns,
+   contact limits, retry limits, and dispute stops.
+4. An allowed action creates a payment link, schedules a retry, sends a message,
+   or escalates to a person.
+5. Only a signed Razorpay webhook can mark a real payment as recovered.
+6. Every event, policy decision, action, approval, and verification is written
+   to the case timeline and audit log.
+
+AI recommends. Policy controls. Payment-provider webhooks verify money.
 
 ## Stack
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | Next.js 15 + TypeScript + Tailwind |
-| Backend | NestJS 11 + TypeScript |
-| Database | PostgreSQL 16 + Prisma |
-| Background jobs | Redis 7 + BullMQ |
-| AI | Mock Gemini provider by default, real Gemini when `GEMINI_API_KEY` is set |
+| Dashboard | Next.js, React, TypeScript, Tailwind CSS |
+| API | NestJS, TypeScript |
+| Data | PostgreSQL, Prisma |
+| Jobs | Redis, BullMQ (optional) |
+| AI | Gemini API, with deterministic mock fallback |
+| Payments | Razorpay Payment Links and signed webhooks |
+| Email | Resend and signed webhooks |
+| Deployment | Railway |
 
-## Monorepo layout
-
-```text
-apps/
-  web/       Next.js dashboard
-  api/       NestJS backend
-packages/
-  shared/    Shared types + Zod schemas
-prisma/      Schema + seed data
-```
-
-## Getting started
+## Local Setup
 
 ```bash
 npm install
 npm run db:up
 npm run db:deploy
 npm run db:seed
+```
+
+Copy `.env.example` to `.env`, then start each service in its own terminal:
+
+```bash
 npm run dev:api
 npm run dev:web
 ```
 
-- API: `http://localhost:3002`
+- API: `http://localhost:3002/health`
 - Dashboard: `http://localhost:3100`
 
-## Core workflow
+The API root URL intentionally returns `404`. Use `/health` to check it.
 
-1. Revenue-loss events create business records plus `OPEN` recovery cases.
-2. The diagnosis layer classifies root cause and recommends one bounded action.
-3. The policy engine enforces retry caps, contact caps, contact windows, cooldowns, and dispute stops.
-4. The tools layer executes only permitted actions and logs them.
-5. Verification updates recovered money and closes linked invoices or subscriptions when payment succeeds.
-6. Promise-to-pay rows are tracked separately and swept when due.
-7. The batch agent runs the whole loop across a prioritized set of cases and returns measured recovery output.
+## Environment Variables
 
-## Main API endpoints
+Use `.env.example` as the complete template. Never commit `.env` or provider
+secrets.
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/health` | Service health |
-| GET | `/customers` | Customers with counts |
-| GET | `/customers/:id` | Customer detail and history |
-| POST | `/customers/:id/preferences` | Record an email, SMS, WhatsApp, or voice opt-in/out |
-| GET | `/cases` | Recovery cases with filters |
-| GET | `/cases/stats/summary` | KPI summary |
-| GET | `/cases/stats/strategies` | Recovery performance by recommended strategy |
-| GET | `/cases/:id` | Case detail with events and AI decision |
-| GET | `/simulator/config` | Simulator capabilities |
-| POST | `/simulator/events/payment-failure` | Create a failed-payment case |
-| POST | `/simulator/events/checkout-abandonment` | Create a checkout-dropoff case |
-| POST | `/simulator/events/subscription-failure` | Create a failed-renewal case |
-| POST | `/simulator/events/invoice-overdue` | Create an overdue-invoice case |
-| POST | `/simulator/batch` | Bulk-generate cases |
-| GET | `/ai/provider` | Active diagnosis provider |
-| POST | `/ai/diagnose/:caseId` | Diagnose one case |
-| POST | `/ai/diagnose/pending` | Diagnose pending `OPEN` cases |
-| GET | `/policy/config` | Effective policy limits |
-| POST | `/policy/evaluate/:caseId` | Dry-run policy verdict |
-| POST | `/cases/:id/execute` | Execute the next action through the policy gate |
-| GET | `/verification/pending` | Cases waiting for payment outcome |
-| POST | `/verification/customer/:caseId` | Simulate one customer outcome |
-| POST | `/verification/batch` | Simulate outcomes across a batch |
-| GET | `/ptp` | Promise-to-pay tracker |
-| POST | `/ptp/sweep` | Sweep due promises |
-| POST | `/ptp/:id/settle` | Manually settle a promise |
-| POST | `/voice/simulate-call/:caseId` | Simulated Hinglish voice call |
-| POST | `/agent/recover-batch` | Run the bounded recovery agent over a batch |
-| POST | `/events/revenue` | Ingest a deduplicated at-risk revenue event |
+### Required For A Deployed API
 
-## Live revenue-event intake
+```env
+NODE_ENV=production
+DATABASE_URL=postgresql://...
+REDIS_URL=redis://...
+API_AUTH_TOKEN=a-long-random-secret
+WEB_ORIGIN=https://your-dashboard.up.railway.app
+```
 
-Send trusted backend events to `POST /events/revenue` with the API key. The
-`provider` and `eventId` pair is idempotent: retries return the original case
-instead of creating duplicate recovery work.
+`API_AUTH_TOKEN` protects all API routes except `/health` and signed provider
+webhooks. The dashboard uses it only on the server; do not expose it in browser
+code or variables prefixed with `NEXT_PUBLIC_`.
+
+### AI: Gemini
+
+```env
+GEMINI_API_KEY=your-google-ai-studio-key
+GEMINI_MODEL=gemini-3.7-flash
+```
+
+When `GEMINI_API_KEY` is present, the API uses real Gemini diagnosis. When it
+is absent, the API uses `mock-gemini`, deterministic local reasoning suitable
+for offline development and demos.
+
+The Gemini key belongs only in the Railway API service. If diagnosis fails,
+check the API deployment logs or the Test Lab error message for the Gemini API
+status before changing keys or models.
+
+### Payments: Razorpay
+
+```env
+PAYMENT_PROVIDER=razorpay
+RAZORPAY_KEY_ID=rzp_test_...
+RAZORPAY_KEY_SECRET=...
+RAZORPAY_WEBHOOK_SECRET=...
+```
+
+Use Razorpay Test Mode for the demo. Register this API webhook and subscribe to
+payment-link payment events:
+
+```text
+https://YOUR-API-DOMAIN.up.railway.app/webhooks/razorpay
+```
+
+The system stores each provider link against its recovery case. It does not
+trust a browser redirect or a customer statement as proof of payment. Only a
+valid signed Razorpay webhook updates a case to `RECOVERED`.
+
+Set `PAYMENT_PROVIDER=simulated` when you do not want a real Razorpay test link.
+
+### Email: Resend
+
+```env
+EMAIL_PROVIDER=resend
+RECOVERY_SEND_LIVE_MESSAGES=true
+RESEND_API_KEY=re_...
+EMAIL_FROM=AI Revenue Recovery <recover@notify.yourdomain.com>
+RESEND_WEBHOOK_SECRET=whsec_...
+RESEND_REPLY_TO_DOMAIN=reply.yourdomain.com
+```
+
+For real customer email, verify a domain you control in Resend and use an
+address at that domain for `EMAIL_FROM`. Configure the Resend webhook:
+
+```text
+https://YOUR-API-DOMAIN.up.railway.app/webhooks/resend
+```
+
+Select `email.sent`, `email.delivered`, `email.opened`, `email.clicked`,
+`email.bounced`, `email.failed`, and `email.received`. The application verifies
+the webhook signature, deduplicates events, and updates contact-attempt status.
+
+For a free personal test, use:
+
+```env
+EMAIL_FROM=AI Revenue Recovery <onboarding@resend.dev>
+```
+
+Resend permits that sender to email only the address associated with the Resend
+account. Use a verified domain before sending recovery email to any other user.
+
+Keep the safe defaults below until delivery is intentionally enabled:
+
+```env
+EMAIL_PROVIDER=simulated
+RECOVERY_SEND_LIVE_MESSAGES=false
+```
+
+### Policy And Job Controls
+
+```env
+CONTACT_WINDOW_START_IST=9
+CONTACT_WINDOW_END_IST=20
+PTP_REMINDER_LEAD_HOURS=24
+BACKGROUND_JOBS_ENABLED=false
+RECOVERY_SEQUENCE_STEPS_JSON=""
+```
+
+The policy engine denies contact without an `OPTED_IN` customer preference. It
+also blocks outreach outside the configured IST window and applies contact and
+retry limits. Keep background jobs disabled for a hackathon demo unless a Redis
+worker schedule is intentionally configured.
+
+## Dashboard Test Lab
+
+The dashboard has a no-PowerShell Test Lab for a private hackathon demo. Enable
+it on the Railway **dashboard service**, not the API service:
+
+```env
+DEMO_MODE=true
+DEMO_ACCESS_TOKEN=a-long-random-private-demo-secret
+```
+
+The Test Lab can create test cases, run AI diagnosis, record demo email consent,
+execute the recommended action, simulate Hinglish voice responses, and simulate
+payment verification.
+
+Set the same values below on the Railway **API service** for a private demo only:
+
+```env
+DEMO_ACCESS_TOKEN=a-long-random-private-demo-secret
+ALLOW_SIMULATED_VERIFICATION=true
+```
+
+Enter `DEMO_ACCESS_TOKEN` in the Test Lab before using any control. It is not a
+public dashboard password and must not be shared in a presentation or committed
+to Git. Mock payment verification is disabled by default, including in
+production; real recovered money can only come from a signed Razorpay webhook.
+
+Use this order:
+
+1. Enter a test name and email, or leave both empty for synthetic data.
+2. Click **Create Test Case**.
+3. Click **Grant Demo Email Consent**.
+4. Click **Run AI Diagnosis**.
+5. Click **Execute Recommended Action**.
+6. For a Razorpay test link, open the link shown in the execution result and
+   complete the payment in Razorpay Test Mode.
+7. Click **Mock Payment Success** only for a simulation-only outcome and only
+   as the final step because it closes the case as `RECOVERED`.
+
+Run contact actions during the configured India contact window. A policy denial
+is expected behavior, not an application error.
+
+Set `DEMO_MODE=false` and `ALLOW_SIMULATED_VERIFICATION=false` before real
+customer use. The Test Lab deliberately has powerful test controls and must not
+remain publicly available in production.
+
+## Customer Consent
+
+Record consent before any real contact action:
+
+```text
+POST /customers/:id/preferences
+```
+
+```json
+{
+  "channel": "EMAIL",
+  "status": "OPTED_IN",
+  "source": "checkout-consent-v1"
+}
+```
+
+Supported channels are `EMAIL`, `SMS`, `WHATSAPP`, and `VOICE`. Preference
+changes are written to the audit log.
+
+## Voice Calling
+
+The current voice feature is a transcript simulator, not a phone provider. Use
+`POST /voice/simulate-call/:caseId` or the Test Lab to test Hinglish intents.
+
+| Transcript intent | Current behavior |
+| --- | --- |
+| Promise to pay | Creates a promise-to-pay record and waits for the date |
+| Customer says payment is complete | Records a payment claim and waits for Razorpay verification |
+| Customer refuses payment | Escalates the case to a human |
+| Unclear response | Records no outbound action and requires human review |
+
+Automatic calling is intentionally not implemented. Before connecting Twilio or
+another provider, implement explicit voice consent, a recording disclosure,
+contact-hour enforcement, human handoff, and provider-specific compliance.
+
+## Promise To Pay
+
+Voice or operator inputs can create a promise-to-pay record. `POST /ptp/sweep`
+processes commitments: it sends one policy-approved reminder when due and then
+escalates an unpaid broken promise to a human. A pre-due reminder is sent within
+`PTP_REMINDER_LEAD_HOURS` when policy permits it.
+
+## Recovery Sequences And Approvals
+
+`POST /sequences/sweep` processes the default bounded sequence:
+
+1. Payment link
+2. 24-hour reminder
+3. 72-hour final reminder
+4. 120-hour human escalation
+
+Every sequence step runs through the policy engine. Customize the sequence only
+with `RECOVERY_SEQUENCE_STEPS_JSON`; it accepts at most eight steps and must end
+in `CREATE_ESCALATION`.
+
+High-value cases (INR 50,000 or more) and high-risk customers can be submitted
+to the approval queue with `POST /approvals/request/:caseId`. An operator can
+approve, reject, or amend an action. Approval does not bypass policy.
+
+## Live Revenue Event Intake
+
+Send trusted server-side billing events to `POST /events/revenue` with the API
+key. The `(provider, eventId)` pair is idempotent, so retrying the same event
+returns the original case instead of creating duplicate recovery work.
 
 ```json
 {
@@ -113,75 +291,32 @@ instead of creating duplicate recovery work.
 }
 ```
 
-## Recovery sequences
+## Main API Endpoints
 
-`POST /sequences/sweep` progresses active cases through the compliant default
-sequence: payment link, 24-hour reminder, 72-hour final reminder, and a
-120-hour human escalation. `POST /sequences/run/:caseId` processes one case.
-The policy engine still enforces the Indian contact window, cooldown, contact
-attempt cap, disputes, and retry limits at every step.
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/health` | API and database readiness |
+| GET | `/cases` | List recovery cases |
+| GET | `/cases/:id` | Case, timeline, decisions, attempts, and links |
+| POST | `/events/revenue` | Ingest one deduplicated revenue-risk event |
+| POST | `/simulator/events/payment-failure` | Create a synthetic payment failure |
+| POST | `/simulator/batch` | Create a synthetic batch |
+| GET | `/ai/provider` | Show `gemini` or `mock-gemini` |
+| POST | `/ai/diagnose/:caseId` | Run one AI diagnosis |
+| POST | `/cases/:id/execute` | Policy-gate and execute recommendation or supplied action |
+| POST | `/verification/customer/:caseId` | Simulation-only payment outcome |
+| POST | `/voice/simulate-call/:caseId` | Simulated Hinglish voice transcript |
+| GET, POST | `/ptp`, `/ptp/sweep` | Promise-to-pay tracking and sweep |
+| GET, POST | `/approvals/pending`, `/approvals/...` | Human approval queue |
+| GET | `/analytics/recovery` | Recovered amount by cause, channel, action, and date |
+| POST | `/agent/recover-batch` | Bounded batch orchestration |
 
-Set `RECOVERY_SEQUENCE_STEPS_JSON` only when a different bounded sequence is
-required. It must be a JSON array of up to eight `{label, action, waitHours}`
-steps and end with `CREATE_ESCALATION`.
+## Railway Deployment
 
-## Resend email delivery
+Deploy two Railway services from the same repository. Leave **Root Directory**
+blank for both because the shared workspace package is required by API and web.
 
-Set `EMAIL_PROVIDER=resend`, `RECOVERY_SEND_LIVE_MESSAGES=true`, `RESEND_API_KEY`,
-and a verified `EMAIL_FROM` address to enable approved recovery emails. Register
-`POST /webhooks/resend` in Resend with `email.delivered`, `email.opened`,
-`email.clicked`, `email.bounced`, `email.failed`, and `email.received`, then set
-its signing secret as `RESEND_WEBHOOK_SECRET`. Delivery events are verified,
-deduplicated, and written to the linked contact attempt and case timeline.
-Set `RESEND_REPLY_TO_DOMAIN` to an inbound-enabled Resend domain to route replies
-to `replies+<contact-attempt-id>@your-domain` and track them as `REPLIED`.
-
-## Human approval queue
-
-High-value cases (Rs 50,000+) and high-risk customers (risk score 0.7+) can be
-submitted through `POST /approvals/request/:caseId`. Operators use
-`POST /approvals/:id/approve` or `/reject` with their identity and optional
-edited action. Approval still runs the policy engine before an action executes.
-
-## Customer consent
-
-Before live outreach, record the customer's channel preference. The policy
-engine blocks contact actions without an `OPTED_IN` preference and outside the
-configured India contact window.
-
-```json
-POST /customers/123/preferences
-{
-  "channel": "EMAIL",
-  "status": "OPTED_IN",
-  "source": "checkout-consent-v1"
-}
-```
-
-## Batch agent example
-
-```bash
-curl -X POST http://localhost:3002/agent/recover-batch \
-  -H "Content-Type: application/json" \
-  -d '{
-    "limit": 25,
-    "verifyWaitingCustomers": true,
-    "verificationSuccessRatePct": 60,
-    "runPromiseSweep": true
-  }'
-```
-
-## Production pilot (India)
-
-The repository is safe to deploy in simulated mode by default. For a real pilot,
-create separate API and dashboard services from the same repository. Leave the
-Railway **Root Directory** blank for both services because they share the root
-workspace and `@revrec/shared` package. Set service variables from `.env.example`
-and set `WEB_ORIGIN` to the deployed dashboard URL.
-
-### Railway API service
-
-Set these values in the API service's **Settings** tab:
+### API Service
 
 ```text
 Build Command: npm run build:shared && npm run build --workspace @revrec/api
@@ -190,83 +325,53 @@ Start Command: npm run start --workspace @revrec/api
 Healthcheck Path: /health
 ```
 
-The repository-level `railway.toml` deliberately specifies only the Railpack
-builder. Service-specific commands must remain in Railway because this shared
-repository deploys two different applications.
+Add PostgreSQL and Redis services. Set `DATABASE_URL=${{Postgres.DATABASE_URL}}`
+and `REDIS_URL=${{Redis.REDIS_URL}}`, then add the API environment variables
+listed above. Deploy API first and confirm:
 
-For Razorpay Test Mode, set `PAYMENT_PROVIDER=razorpay` plus the three
-`RAZORPAY_*` secrets in Railway. Payment links are mapped to recovery cases and
-only a signed `POST /webhooks/razorpay` event can mark money as recovered.
-Subscribe to `payment_link.paid`, `payment.failed`, and dispute events in the
-Razorpay dashboard. Do not configure live keys until consent, templates, and a
-human escalation owner have been approved.
+```text
+https://YOUR-API-DOMAIN.up.railway.app/health
+```
 
-The free options are appropriate for a small pilot only: Railway has limited
-monthly free credit, Resend has a capped free transactional-email tier, and
-Razorpay Test Mode is free. Live Razorpay payments and SMS/WhatsApp delivery
-have usage charges.
-
-### Railway dashboard service
-
-Create a second Railway service from the same GitHub repository for
-`@revrec/web`. In its service settings, use these commands:
+### Dashboard Service
 
 ```text
 Build Command: npm run build:shared && npm run build --workspace @revrec/web
 Start Command: npm run start --workspace @revrec/web
 ```
 
-Set these dashboard service variables:
+Set:
 
-```text
+```env
 API_URL=https://YOUR-API-DOMAIN.up.railway.app
-API_AUTH_TOKEN=the same private token configured on the API service
-DEMO_MODE=false
+API_AUTH_TOKEN=the-same-private-token-as-the-api
+DEMO_MODE=true
 ```
 
-Set `DEMO_MODE=true` only for a private hackathon demonstration. It exposes the
-dashboard Test Lab, which can create synthetic cases and run simulated AI,
-voice, and payment-verification workflows. Keep it `false` for production.
+After Railway generates the dashboard URL, set `WEB_ORIGIN` on the API service
+to that exact URL and redeploy the API. Then set `DEMO_MODE=false` when the
+private demonstration is complete.
 
-Then set `WEB_ORIGIN=https://YOUR-DASHBOARD-DOMAIN.up.railway.app` on the API
-service and redeploy it. The dashboard calls the API server-side, so the token
-is never exposed to the browser.
+## Production Checklist
 
-Optional demo helper:
+- Use new, private API, Razorpay, Resend, and Gemini secrets in Railway.
+- Confirm `/health` returns `status: ok` after deployment.
+- Set the exact deployed dashboard URL in `WEB_ORIGIN`.
+- Configure and test signed Razorpay webhooks before enabling live payments.
+- Obtain customer consent before enabling live email or any future calling.
+- Verify a Resend domain before emailing anyone other than the Resend account owner.
+- Keep `RECOVERY_SEND_LIVE_MESSAGES=false` until templates and consent are reviewed.
+- Keep `DEMO_MODE=false` outside a private demo.
+- Keep `ALLOW_SIMULATED_VERIFICATION=false` outside a private demo.
+- Do not enable automatic calling until a compliant provider and human handoff are ready.
+- Use the provider dashboard and case audit trail to verify every real recovery.
 
-```json
-{
-  "simulateBatch": {
-    "failedPayments": 10,
-    "checkoutAbandonments": 5,
-    "subscriptionFailures": 4,
-    "invoiceOverdues": 3
-  }
-}
-```
+## Security Boundaries
 
-The batch response includes:
-
-- cases selected
-- cases diagnosed
-- policy allows vs denies
-- actions executed
-- recovered count and amount
-- deferred or escalated promise-to-pay outcomes
-- per-case outcomes
-- post-run KPI snapshot
-
-## Real-world safeguards now implemented
-
-- Terminal cases cannot receive new automated outreach or retries.
-- Policy denials caused by contact hours or cooldown defer work instead of forcing escalation.
-- Retry denials fall back to safer customer-action flows where possible.
-- Verified recovery updates linked invoices and subscriptions, not just the recovery case.
-- Promise-to-pay records now generate case events and audit logs.
-- Every batch run writes an audit log summary.
-
-## Notes
-
-- The dashboard includes a `Run Batch Agent` button that calls the new orchestration endpoint and refreshes KPI views.
-- The default AI provider is deterministic and offline-friendly for local development and testing.
-- The web production build may require elevated process permissions in some sandboxed Windows environments.
+- API key protection covers operational endpoints.
+- Razorpay and Resend webhooks verify provider signatures and deduplicate events.
+- Email and payment links are policy-gated by consent, contact window, cooldown,
+  and attempt limits.
+- Terminal cases cannot receive new automated recovery work.
+- A payment statement in a voice transcript is not a payment verification.
+- Audit logs retain the actor, decision, action, and relevant metadata.

@@ -12,6 +12,11 @@ export interface ToolResult {
   paymentId?: number;
 }
 
+type EmailDeliveryResult = {
+  delivered: boolean;
+  error?: string;
+};
+
 /** Statuses that may still receive automated recovery work. */
 const ACTIONABLE_STATUSES = [
   CaseStatus.OPEN,
@@ -36,7 +41,18 @@ export class ToolsService {
 
   async sendPaymentLink(caseId: number, updateMethod: boolean): Promise<ToolResult> {
     const rc = await this.loadCase(caseId, true);
-    const liveLink = this.razorpay.isEnabled()
+    const livePayments = this.razorpay.isEnabled();
+    const existingLink = livePayments
+      ? await this.prisma.paymentLink.findFirst({
+          where: {
+            caseId,
+            provider: "razorpay",
+            status: { notIn: ["paid", "cancelled", "expired"] },
+          },
+          orderBy: { createdAt: "desc" },
+        })
+      : null;
+    const createdLink = livePayments && !existingLink
       ? await this.razorpay.createPaymentLink({
           caseId,
           amount: Number(rc.amountAtRisk),
@@ -47,7 +63,7 @@ export class ToolsService {
           updateMethod,
         })
       : null;
-    const link = liveLink?.short_url ?? `https://pay.revrec.sim/l/${caseId}-${Date.now().toString(36)}`;
+    const link = existingLink?.shortUrl ?? createdLink?.short_url ?? `https://pay.revrec.sim/l/${caseId}-${Date.now().toString(36)}`;
     const kind = updateMethod ? "Payment-method update link" : "Secure payment link";
     const attempt = await this.prisma.contactAttempt.create({
       data: {
@@ -57,7 +73,7 @@ export class ToolsService {
         content: `${kind}: ${link} (amount at risk Rs ${Number(rc.amountAtRisk).toLocaleString("en-IN")})`,
       },
     });
-    const delivery = liveLink
+    const delivery = livePayments
       ? await this.sendEmail(attempt.id, {
           customerName: rc.customer.name,
           customerEmail: rc.customer.email,
@@ -70,7 +86,7 @@ export class ToolsService {
       : null;
     return this.finish(caseId, {
       tool: updateMethod ? "send_payment_update_link" : "send_payment_link",
-      detail: `${kind} ${liveLink ? "created with Razorpay" : "created in simulation"}${delivery ? ` and emailed to ${rc.customer.email}` : "; customer delivery is disabled"}: ${link}`,
+      detail: `${kind} ${livePayments ? existingLink ? "reused from Razorpay" : "created with Razorpay" : "created in simulation"}${delivery?.delivered ? ` and emailed to ${rc.customer.email}` : delivery?.error ? `; email delivery failed: ${delivery.error}` : "; customer delivery is disabled"}: ${link}`,
       caseStatus: CaseStatus.WAITING_CUSTOMER,
       contactAttemptId: attempt.id,
     });
@@ -101,9 +117,9 @@ export class ToolsService {
       : null;
     return this.finish(caseId, {
       tool: channel === "EMAIL" ? "send_email" : "send_sms",
-      detail: delivery
+      detail: delivery?.delivered
         ? `Recovery email delivered to Resend for case #${caseId}`
-        : `${channel === "EMAIL" ? "Recovery email" : "Recovery SMS"} recorded but not delivered because no messaging provider is configured for case #${caseId}`,
+        : `${channel === "EMAIL" ? "Recovery email" : "Recovery SMS"} recorded but not delivered${delivery?.error ? `: ${delivery.error}` : " because no messaging provider is configured"} for case #${caseId}`,
       caseStatus: CaseStatus.WAITING_CUSTOMER,
       contactAttemptId: attempt.id,
     });
@@ -168,7 +184,7 @@ export class ToolsService {
   private async sendEmail(
     contactAttemptId: number,
     input: Omit<Parameters<ResendEmailService["sendRecoveryEmail"]>[0], "contactAttemptId">,
-  ) {
+  ): Promise<EmailDeliveryResult | null> {
     if (!this.resend.isLiveDeliveryEnabled()) return null;
     try {
       const delivery = await this.resend.sendRecoveryEmail({ contactAttemptId, ...input });
@@ -176,10 +192,13 @@ export class ToolsService {
         where: { id: contactAttemptId },
         data: { status: "SENT", provider: delivery.provider, providerMessageId: delivery.providerMessageId },
       });
-      return delivery;
+      return { delivered: true };
     } catch (error) {
       await this.prisma.contactAttempt.update({ where: { id: contactAttemptId }, data: { status: "FAILED", provider: "resend" } });
-      throw error;
+      return {
+        delivered: false,
+        error: error instanceof Error ? error.message : "Email provider request failed",
+      };
     }
   }
 

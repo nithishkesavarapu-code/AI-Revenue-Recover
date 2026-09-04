@@ -206,7 +206,6 @@ export class DiagnosisService {
   }
 
   private geminiModel(): string | undefined {
-    return this.providerName === "gemini" ? process.env.GEMINI_MODEL ?? "gemini-2.0-flash" : undefined;
+    return this.providerName === "gemini" ? process.env.GEMINI_MODEL ?? "gemini-3.7-flash" : undefined;
   }
 }
-

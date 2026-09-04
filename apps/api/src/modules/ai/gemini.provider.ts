@@ -20,7 +20,7 @@ export class GeminiProvider implements AiDiagnosisProvider {
     if (!apiKey) {
       throw new Error("GEMINI_API_KEY is not configured");
     }
-    const model = this.config.get<string>("GEMINI_MODEL") ?? "gemini-2.0-flash";
+    const model = this.config.get<string>("GEMINI_MODEL") ?? "gemini-3.7-flash";
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
