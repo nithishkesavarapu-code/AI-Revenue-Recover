@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { timingSafeEqual } from "node:crypto";
-import { apiPost } from "@/lib/api";
+import { apiGet, apiPost } from "@/lib/api";
 
 export type DemoActionState = {
   message: string;
@@ -78,6 +78,23 @@ export async function createDemoCase(_: DemoActionState, formData: FormData): Pr
   });
 }
 
+export async function loadDemoCase(_: DemoActionState, formData: FormData): Promise<DemoActionState> {
+  return runDemo(formData, async () => {
+    const caseId = formCaseId(formData);
+    const result = await apiGet<{
+      id: number;
+      customerId: number;
+      status: string;
+      customer: { name: string; email: string };
+    }>(`/cases/${caseId}`);
+    return {
+      message: `Loaded case #${result.id} for ${result.customer.name} (${result.customer.email}). Status: ${result.status}.`,
+      caseId: result.id,
+      customerId: result.customerId,
+    };
+  });
+}
+
 export async function diagnoseDemoCase(_: DemoActionState, formData: FormData): Promise<DemoActionState> {
   return runDemo(formData, async () => {
     const caseId = formCaseId(formData);
@@ -130,6 +147,21 @@ export async function executeRecommendedDemoAction(_: DemoActionState, formData:
     const result = await apiPost<{ detail: string; executedAction: string; policyDecision: { decision: string; reason: string } }>(`/cases/${caseId}/execute`, {});
     return {
       message: `${result.policyDecision.decision}: ${result.executedAction.replace(/_/g, " ")}. ${result.detail ?? result.policyDecision.reason}`,
+      caseId,
+    };
+  });
+}
+
+/** A visible, policy-gated operator override for testing payment-link delivery. */
+export async function sendTestPaymentLink(_: DemoActionState, formData: FormData): Promise<DemoActionState> {
+  return runDemo(formData, async () => {
+    const caseId = formCaseId(formData);
+    const result = await apiPost<{
+      detail: string;
+      policyDecision: { decision: string; reason: string };
+    }>(`/cases/${caseId}/execute`, { action: "SEND_PAYMENT_LINK" });
+    return {
+      message: `${result.policyDecision.decision}: ${result.detail ?? result.policyDecision.reason}`,
       caseId,
     };
   });

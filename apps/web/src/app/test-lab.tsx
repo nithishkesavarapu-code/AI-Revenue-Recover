@@ -6,6 +6,8 @@ import {
   diagnoseDemoCase,
   executeRecommendedDemoAction,
   grantDemoEmailConsent,
+  loadDemoCase,
+  sendTestPaymentLink,
   simulateRecoveryDemo,
   simulateVoiceDemo,
   type DemoActionState,
@@ -27,17 +29,20 @@ export function TestLab() {
   const [customerId, setCustomerId] = useState("");
   const [demoAccessToken, setDemoAccessToken] = useState("");
   const [createState, createAction, creating] = useActionState(createDemoCase, INITIAL_STATE);
+  const [loadState, loadAction, loading] = useActionState(loadDemoCase, INITIAL_STATE);
   const [diagnoseState, diagnoseAction, diagnosing] = useActionState(diagnoseDemoCase, INITIAL_STATE);
   const [consentState, consentAction, consenting] = useActionState(grantDemoEmailConsent, INITIAL_STATE);
   const [executionState, executionAction, executing] = useActionState(executeRecommendedDemoAction, INITIAL_STATE);
+  const [paymentLinkState, paymentLinkAction, sendingPaymentLink] = useActionState(sendTestPaymentLink, INITIAL_STATE);
   const [voiceState, voiceAction, calling] = useActionState(simulateVoiceDemo, INITIAL_STATE);
   const [recoveryState, recoveryAction, recovering] = useActionState(simulateRecoveryDemo, INITIAL_STATE);
 
   useEffect(() => {
-    const latestCaseId = createState.caseId ?? diagnoseState.caseId ?? executionState.caseId ?? voiceState.caseId ?? recoveryState.caseId;
+    const latestCaseId = createState.caseId ?? loadState.caseId ?? diagnoseState.caseId ?? executionState.caseId ?? paymentLinkState.caseId ?? voiceState.caseId ?? recoveryState.caseId;
     if (latestCaseId) setCaseId(String(latestCaseId));
-    if (createState.customerId) setCustomerId(String(createState.customerId));
-  }, [createState, diagnoseState, executionState, voiceState, recoveryState]);
+    const latestCustomerId = createState.customerId ?? loadState.customerId;
+    if (latestCustomerId) setCustomerId(String(latestCustomerId));
+  }, [createState, loadState, diagnoseState, executionState, paymentLinkState, voiceState, recoveryState]);
 
   return (
     <section className="mb-8 rounded-2xl border border-blue-200 bg-blue-50/60 p-5 shadow-[0_12px_28px_rgba(29,78,160,0.07)]">
@@ -97,16 +102,24 @@ export function TestLab() {
           <label className="mt-3 block text-sm text-slate-700">Case ID
             <input value={caseId} onChange={(event) => setCaseId(event.target.value)} placeholder="Created case ID" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
           </label>
-          <p className="mt-2 text-xs text-slate-500">Customer ID: {customerId || "Create a test case first"}</p>
+          <form action={loadAction} className="mt-2">
+            <input type="hidden" name="demoAccessToken" value={demoAccessToken} />
+            <input type="hidden" name="caseId" value={caseId} />
+            <button disabled={loading} className="rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-60">{loading ? "Loading..." : "Load Case"}</button>
+          </form>
+          <p className="mt-2 text-xs text-slate-500">Customer ID: {customerId || "Load an existing case or create a test case first"}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <form action={consentAction}><input type="hidden" name="demoAccessToken" value={demoAccessToken} /><input type="hidden" name="customerId" value={customerId} /><button disabled={consenting} className="rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-60">{consenting ? "Saving..." : "Grant Demo Email Consent"}</button></form>
             <form action={diagnoseAction}><input type="hidden" name="demoAccessToken" value={demoAccessToken} /><input type="hidden" name="caseId" value={caseId} /><button disabled={diagnosing} className="rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-60">{diagnosing ? "Diagnosing..." : "Run AI Diagnosis"}</button></form>
             <form action={executionAction}><input type="hidden" name="demoAccessToken" value={demoAccessToken} /><input type="hidden" name="caseId" value={caseId} /><button disabled={executing} className="rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-60">{executing ? "Executing..." : "Execute Recommended Action"}</button></form>
+            <form action={paymentLinkAction}><input type="hidden" name="demoAccessToken" value={demoAccessToken} /><input type="hidden" name="caseId" value={caseId} /><button disabled={sendingPaymentLink} className="rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-60">{sendingPaymentLink ? "Sending..." : "Send Test Payment Link"}</button></form>
             <form action={recoveryAction}><input type="hidden" name="demoAccessToken" value={demoAccessToken} /><input type="hidden" name="caseId" value={caseId} /><button disabled={recovering} className="rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-60">{recovering ? "Verifying..." : "Mock Payment Success"}</button></form>
           </div>
           <Result state={consentState} />
+          <Result state={loadState} />
           <Result state={diagnoseState} />
           <Result state={executionState} />
+          <Result state={paymentLinkState} />
           <Result state={recoveryState} />
         </div>
 

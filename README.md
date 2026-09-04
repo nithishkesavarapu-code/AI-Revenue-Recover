@@ -197,12 +197,17 @@ Use this order:
 
 1. Enter a test name and email, or leave both empty for synthetic data.
 2. Click **Create Test Case**.
-3. Click **Grant Demo Email Consent**.
-4. Click **Run AI Diagnosis**.
-5. Click **Execute Recommended Action**.
-6. For a Razorpay test link, open the link shown in the execution result and
+3. If reusing a previous case ID, enter it and click **Load Case** first. This
+   loads its correct customer before recording consent.
+4. Click **Grant Demo Email Consent**.
+5. Click **Run AI Diagnosis**.
+6. Click **Execute Recommended Action**.
+7. If Gemini is temporarily unavailable, use **Send Test Payment Link** as an
+   operator-approved demo override. It still applies consent, contact-hour,
+   cooldown, and attempt-limit policy.
+8. For a Razorpay test link, open the link shown in the execution result and
    complete the payment in Razorpay Test Mode.
-7. Click **Mock Payment Success** only for a simulation-only outcome and only
+9. Click **Mock Payment Success** only for a simulation-only outcome and only
    as the final step because it closes the case as `RECOVERED`.
 
 Run contact actions during the configured India contact window. A policy denial
