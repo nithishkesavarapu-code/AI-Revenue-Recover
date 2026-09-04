@@ -28,11 +28,17 @@ function apiHeaders(headers: Record<string, string> = {}) {
   return API_AUTH_TOKEN ? { ...headers, "x-api-key": API_AUTH_TOKEN } : headers;
 }
 
+async function apiError(res: Response, path: string) {
+  const payload = (await res.json().catch(() => null)) as { message?: string | string[] } | null;
+  const message = Array.isArray(payload?.message) ? payload.message.join(", ") : payload?.message;
+  return new Error(`API ${path} failed: ${res.status} ${res.statusText}${message ? ` - ${message}` : ""}`);
+}
+
 
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { cache: "no-store", headers: apiHeaders() });
   if (!res.ok) {
-    throw new Error(`API ${path} failed: ${res.status} ${res.statusText}`);
+    throw await apiError(res, path);
   }
   return (await res.json()) as T;
 }
@@ -45,7 +51,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     cache: "no-store",
   });
   if (!res.ok) {
-    throw new Error(`API ${path} failed: ${res.status} ${res.statusText}`);
+    throw await apiError(res, path);
   }
   return (await res.json()) as T;
 }

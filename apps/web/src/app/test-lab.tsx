@@ -57,7 +57,14 @@ export function TestLab() {
                 <option value="AUTHENTICATION_FAILED">Authentication failed</option>
               </select>
             </label>
+            <label className="text-sm text-slate-700">Test customer name (optional)
+              <input name="customerName" placeholder="Demo Customer" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+            </label>
+            <label className="text-sm text-slate-700">Test customer email (optional)
+              <input name="customerEmail" type="email" placeholder="your-email@gmail.com" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+            </label>
           </div>
+          <p className="mt-2 text-xs text-slate-500">Leave both customer fields empty for random synthetic data. Enter both to create a case for a specific test customer.</p>
           <button disabled={creating} className="mt-3 rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
             {creating ? "Creating..." : "Create Test Case"}
           </button>

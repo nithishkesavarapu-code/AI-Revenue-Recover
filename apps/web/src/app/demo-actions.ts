@@ -40,6 +40,22 @@ export async function createDemoCase(_: DemoActionState, formData: FormData): Pr
   return runDemo(async () => {
     const amount = Number(formData.get("amount")) || 499;
     const failureReason = String(formData.get("failureReason") || initialFailureReason);
+    const customerName = String(formData.get("customerName") ?? "").trim();
+    const customerEmail = String(formData.get("customerEmail") ?? "").trim();
+    if (customerName || customerEmail) {
+      if (!customerName || !customerEmail) throw new Error("Enter both customer name and email, or leave both blank for synthetic data.");
+      const result = await apiPost<{ caseId: number }>("/events/revenue", {
+        provider: "dashboard-demo",
+        eventId: `dashboard-demo-${crypto.randomUUID()}`,
+        type: "PAYMENT_FAILED",
+        sourceReference: `demo-${Date.now()}`,
+        amount,
+        currency: "INR",
+        failureReason,
+        customer: { name: customerName, email: customerEmail },
+      });
+      return { message: `Created failed-payment case #${result.caseId} for ${customerName}.`, caseId: result.caseId };
+    }
     const result = await apiPost<{ caseId: number }>("/simulator/events/payment-failure", { amount, failureReason });
     return { message: `Created failed-payment case #${result.caseId}.`, caseId: result.caseId };
   });
@@ -48,9 +64,9 @@ export async function createDemoCase(_: DemoActionState, formData: FormData): Pr
 export async function diagnoseDemoCase(_: DemoActionState, formData: FormData): Promise<DemoActionState> {
   return runDemo(async () => {
     const caseId = formCaseId(formData);
-    const result = await apiPost<{ rootCause: string; recommendedAction: string }>(`/ai/diagnose/${caseId}`, {});
+    const result = await apiPost<{ decision: { rootCause: string; recommendedAction: string } }>(`/ai/diagnose/${caseId}`, {});
     return {
-      message: `AI diagnosis: ${result.rootCause.replace(/_/g, " ")}. Recommended: ${result.recommendedAction.replace(/_/g, " ")}.`,
+      message: `AI diagnosis: ${result.decision.rootCause.replace(/_/g, " ")}. Recommended: ${result.decision.recommendedAction.replace(/_/g, " ")}.`,
       caseId,
     };
   });
