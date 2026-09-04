@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { aiDecisionSchema, type AiDecision, type DiagnosisInput } from "@revrec/shared";
 import { buildDiagnosisPrompt, geminiResponseSchema } from "./gemini-prompt";
@@ -12,6 +12,7 @@ import type { AiDiagnosisProvider } from "./ai-provider.interface";
 @Injectable()
 export class GeminiProvider implements AiDiagnosisProvider {
   readonly name = "gemini";
+  private readonly logger = new Logger(GeminiProvider.name);
 
   constructor(private readonly config: ConfigService) {}
 
@@ -39,7 +40,9 @@ export class GeminiProvider implements AiDiagnosisProvider {
     );
 
     if (!res.ok) {
-      throw new Error(`Gemini API error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      const providerBody = (await res.text()).slice(0, 1_000);
+      this.logger.error(`Gemini diagnosis request failed (${res.status}): ${providerBody}`);
+      throw new ServiceUnavailableException(this.failureMessage(res.status));
     }
 
     const data = (await res.json()) as {
@@ -52,5 +55,18 @@ export class GeminiProvider implements AiDiagnosisProvider {
 
     // Schema-validating parse — invalid LLM output is rejected here.
     return aiDecisionSchema.parse(JSON.parse(text));
+  }
+
+  private failureMessage(status: number) {
+    if (status === 401 || status === 403) {
+      return `Gemini diagnosis was rejected (${status}). Check GEMINI_API_KEY and its Google AI Studio permissions.`;
+    }
+    if (status === 404) {
+      return `Gemini model was not found (${status}). Check GEMINI_MODEL in the API service.`;
+    }
+    if (status === 429) {
+      return "Gemini quota is currently exhausted. Wait for quota to reset or use a key with available quota.";
+    }
+    return `Gemini diagnosis is temporarily unavailable (${status}). Check the API deployment logs for the provider response.`;
   }
 }

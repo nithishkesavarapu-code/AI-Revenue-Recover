@@ -87,8 +87,10 @@ is absent, the API uses `mock-gemini`, deterministic local reasoning suitable
 for offline development and demos.
 
 The Gemini key belongs only in the Railway API service. If diagnosis fails,
-check the API deployment logs or the Test Lab error message for the Gemini API
-status before changing keys or models.
+the Test Lab now reports a safe provider status: `401`/`403` means check the
+key and Google AI Studio permissions, `404` means check `GEMINI_MODEL`, and
+`429` means the key has no remaining quota. Railway API logs retain the provider
+response for troubleshooting without exposing it to dashboard users.
 
 ### Payments: Razorpay
 
