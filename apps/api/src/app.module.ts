@@ -21,6 +21,8 @@ import { SequencesModule } from "./modules/sequences/sequences.module";
 import { EmailModule } from "./modules/email/email.module";
 import { ApprovalsModule } from "./modules/approvals/approvals.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
+import { OutboxModule } from "./modules/outbox/outbox.module";
+import { OperationsModule } from "./modules/operations/operations.module";
 
 @Module({
   imports: [
@@ -44,6 +46,8 @@ import { AnalyticsModule } from "./modules/analytics/analytics.module";
     EmailModule,
     ApprovalsModule,
     AnalyticsModule,
+    OutboxModule,
+    OperationsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ApiKeyGuard }],
 })

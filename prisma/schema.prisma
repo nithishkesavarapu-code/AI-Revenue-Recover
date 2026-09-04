@@ -117,6 +117,13 @@ enum ApprovalStatus {
   REJECTED
 }
 
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
 // ---------------- Models ----------------
 
 
@@ -361,6 +368,24 @@ model ProviderWebhookEvent {
 
   @@unique([provider, eventId])
   @@index([provider, eventType])
+}
+
+// Durable provider work. A unique dedupe key prevents duplicate external sends
+// when a request is retried after a process crash or network timeout.
+model OutboxMessage {
+  id            Int          @id @default(autoincrement())
+  topic         String
+  dedupeKey     String       @unique
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attempts      Int          @default(0)
+  availableAt   DateTime     @default(now())
+  lastError     String?
+  sentAt        DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([status, availableAt])
 }
 
 // Provider-neutral idempotency ledger for inbound at-risk revenue events.

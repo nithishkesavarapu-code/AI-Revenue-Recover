@@ -3,6 +3,8 @@ import { ConfigService } from "@nestjs/config";
 import { Queue, Worker, type ConnectionOptions } from "bullmq";
 import type { BatchRecoveryRunRequest } from "@revrec/shared";
 import { AgentService } from "../agent/agent.service";
+import { OperationsService } from "../operations/operations.service";
+import { OutboxService } from "../outbox/outbox.service";
 
 const QUEUE_NAME = "recovery-workflows";
 
@@ -10,8 +12,9 @@ const QUEUE_NAME = "recovery-workflows";
 export class RecoveryJobsService implements OnModuleInit, OnModuleDestroy {
   private queue?: Queue<BatchRecoveryRunRequest>;
   private worker?: Worker<BatchRecoveryRunRequest>;
+  private maintenanceTimer?: NodeJS.Timeout;
 
-  constructor(private readonly config: ConfigService, private readonly agent: AgentService) {}
+  constructor(private readonly config: ConfigService, private readonly agent: AgentService, private readonly outbox: OutboxService, private readonly operations: OperationsService) {}
 
   enabled() {
     return this.config.get("BACKGROUND_JOBS_ENABLED") === "true";
@@ -26,6 +29,8 @@ export class RecoveryJobsService implements OnModuleInit, OnModuleDestroy {
       async (job) => this.agent.runBatch(job.data),
       { connection, concurrency: 2 },
     );
+    this.maintenanceTimer = setInterval(() => void this.runMaintenance(), 60_000);
+    void this.runMaintenance();
   }
 
   async enqueueBatch(input: BatchRecoveryRunRequest) {
@@ -40,8 +45,23 @@ export class RecoveryJobsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    if (this.maintenanceTimer) clearInterval(this.maintenanceTimer);
     await this.worker?.close();
     await this.queue?.close();
+  }
+
+  private async runMaintenance() {
+    try {
+      await this.outbox.drain();
+      const hour = new Date().getUTCHours();
+      if (hour === 0) {
+        await this.operations.redactExpiredPii();
+        await this.operations.dailySummary();
+      }
+    } catch (error) {
+      // Logging here keeps maintenance failures visible without stopping recovery jobs.
+      console.error("Recovery maintenance failed", error);
+    }
   }
 
   private redisConnection(): ConnectionOptions {

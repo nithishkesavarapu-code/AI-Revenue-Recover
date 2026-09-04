@@ -3,6 +3,7 @@ import { CaseStatus, PaymentStatus, type Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RazorpayService } from "../payments/razorpay.service";
 import { ResendEmailService } from "../email/resend-email.service";
+import { OutboxService } from "../outbox/outbox.service";
 
 export interface ToolResult {
   tool: string;
@@ -37,6 +38,7 @@ export class ToolsService {
     private readonly prisma: PrismaService,
     private readonly razorpay: RazorpayService,
     private readonly resend: ResendEmailService,
+    private readonly outbox: OutboxService,
   ) {}
 
   async sendPaymentLink(caseId: number, updateMethod: boolean): Promise<ToolResult> {
@@ -187,12 +189,8 @@ export class ToolsService {
   ): Promise<EmailDeliveryResult | null> {
     if (!this.resend.isLiveDeliveryEnabled()) return null;
     try {
-      const delivery = await this.resend.sendRecoveryEmail({ contactAttemptId, ...input });
-      await this.prisma.contactAttempt.update({
-        where: { id: contactAttemptId },
-        data: { status: "SENT", provider: delivery.provider, providerMessageId: delivery.providerMessageId },
-      });
-      return { delivered: true };
+      const delivery = await this.outbox.enqueueEmail({ contactAttemptId, ...input });
+      return delivery.delivered ? { delivered: true } : { delivered: false, error: delivery.error ?? "Email queued for retry" };
     } catch (error) {
       await this.prisma.contactAttempt.update({ where: { id: contactAttemptId }, data: { status: "FAILED", provider: "resend" } });
       return {

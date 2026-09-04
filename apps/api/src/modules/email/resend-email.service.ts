@@ -46,7 +46,9 @@ export class ResendEmailService {
 
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      // Resend will treat a retry for this contact attempt as the same send.
+      // This closes the crash-after-send / retry duplication window.
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": `recovery-email-${input.contactAttemptId}` },
       body: JSON.stringify({
         from,
         to: [input.customerEmail],
