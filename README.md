@@ -174,7 +174,7 @@ it on the Railway **dashboard service**, not the API service:
 
 ```env
 DEMO_MODE=true
-DEMO_ACCESS_TOKEN=a-long-random-private-demo-secret
+DEMO_ACCESS_TOKEN=uzB95vxC-5_169i4ujaDBCrPCyqyyGiXrY2dyxf9eAw  (For Testing in the Dashboard)
 ```
 
 The Test Lab can create test cases, run AI diagnosis, record demo email consent,
@@ -184,7 +184,7 @@ payment verification.
 Set the same values below on the Railway **API service** for a private demo only:
 
 ```env
-DEMO_ACCESS_TOKEN=a-long-random-private-demo-secret
+DEMO_ACCESS_TOKEN=uzB95vxC-5_169i4ujaDBCrPCyqyyGiXrY2dyxf9eAw
 ALLOW_SIMULATED_VERIFICATION=true
 ```
 
